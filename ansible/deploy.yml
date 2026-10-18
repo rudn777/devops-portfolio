@@ -1,10 +1,10 @@
 ---
 - name: Деплой demo-app в Docker
   hosts: all
-  become: true
   vars:
     app_name: demo-app
     app_port: 8080
+    install_docker: false      # true только для "чистого" сервера Debian/Ubuntu
     image: "{{ registry }}/{{ registry_project }}/{{ app_name }}:{{ image_tag }}"
 
   pre_tasks:
@@ -13,31 +13,26 @@
         that:
           - registry is defined
           - registry_project is defined
-          - registry_user is defined
-          - registry_password is defined
           - image_tag is defined
-        fail_msg: "Не заданы переменные для доступа к Harbor или image_tag"
+        fail_msg: "Нужны переменные registry, registry_project и image_tag"
 
   tasks:
-    - name: Установить Docker и Python SDK для Docker (Debian/Ubuntu)
+    - name: Установить Docker и Python SDK для Docker (только если нужно)
+      become: true
       ansible.builtin.apt:
         name: [docker.io, python3-docker]
         state: present
         update_cache: true
         cache_valid_time: 3600
+      when: install_docker | bool
 
-    - name: Запустить и включить службу Docker
-      ansible.builtin.service:
-        name: docker
-        state: started
-        enabled: true
-
-    - name: Войти в Harbor
+    - name: Войти в реестр (если заданы учётные данные)
       community.docker.docker_login:
         registry_url: "{{ registry }}"
         username: "{{ registry_user }}"
         password: "{{ registry_password }}"
       no_log: true
+      when: registry_user is defined and registry_password is defined
 
     - name: Скачать образ
       community.docker.docker_image:
@@ -50,7 +45,6 @@
         name: "{{ app_name }}"
         image: "{{ image }}"
         state: started
-        recreate: true
         restart_policy: unless-stopped
         published_ports:
           - "{{ app_port }}:8080"
@@ -63,7 +57,3 @@
       retries: 10
       delay: 3
       until: health.status == 200
-
-    - name: Удалить неиспользуемые образы
-      community.docker.docker_prune:
-        images: true
