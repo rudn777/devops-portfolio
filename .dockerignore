@@ -1,0 +1,6 @@
+.git
+tests
+ansible
+k8s
+monitoring
+*.md

@@ -1,0 +1,75 @@
+# Pipeline: lint -> test -> build (push в Harbor) -> deploy (Ansible, вручную)
+#
+# Переменные в Settings -> CI/CD -> Variables (masked/protected):
+#   HARBOR_REGISTRY  например harbor.example.com
+#   HARBOR_PROJECT   например demo
+#   HARBOR_USER, HARBOR_PASSWORD   (лучше robot-аккаунт Harbor)
+#   DEPLOY_HOST, DEPLOY_USER       сервер с Docker
+#   SSH_PRIVATE_KEY                приватный ключ для деплоя (тип Variable)
+
+stages: [lint, test, build, deploy]
+
+variables:
+  IMAGE: "$HARBOR_REGISTRY/$HARBOR_PROJECT/demo-app"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+default:
+  cache:
+    key: pip
+    paths: [.cache/pip]
+
+lint:
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - pip install -q flake8==7.1.1 yamllint
+    - flake8 app tests
+    - yamllint -d relaxed .gitlab-ci.yml ansible k8s monitoring
+
+test:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - pip install -q -r requirements-dev.txt
+    - pytest -q
+
+build:
+  stage: build
+  image: docker:27
+  services: [docker:27-dind]
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - echo "$HARBOR_PASSWORD" | docker login "$HARBOR_REGISTRY" -u "$HARBOR_USER" --password-stdin
+    - docker build --build-arg APP_VERSION="$CI_COMMIT_SHORT_SHA" -t "$IMAGE:$CI_COMMIT_SHORT_SHA" -t "$IMAGE:latest" .
+    - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker push "$IMAGE:latest"
+
+deploy:
+  stage: deploy
+  image: python:3.12-slim
+  needs: [build]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: production
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq openssh-client
+    - pip install -q ansible-core==2.17.5
+    - ansible-galaxy collection install -r ansible/requirements.yml
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+  script:
+    - >
+      ansible-playbook -i "$DEPLOY_HOST," -u "$DEPLOY_USER"
+      --private-key ~/.ssh/id_ed25519 ansible/deploy.yml
+      -e registry="$HARBOR_REGISTRY"
+      -e registry_project="$HARBOR_PROJECT"
+      -e registry_user="$HARBOR_USER"
+      -e registry_password="$HARBOR_PASSWORD"
+      -e image_tag="$CI_COMMIT_SHORT_SHA"

@@ -1,0 +1,7 @@
+---
+# Фрагмент для prometheus.yml (запуск на VM с Docker)
+scrape_configs:
+  - job_name: demo-app
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.0.2.10:8080"]

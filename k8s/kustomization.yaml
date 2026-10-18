@@ -1,0 +1,13 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: demo
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+# Подставить свой реестр и тег:
+#   kustomize edit set image harbor.example.com/demo/demo-app=<реестр>/demo/demo-app:<тег>
+images:
+  - name: harbor.example.com/demo/demo-app
+    newTag: latest

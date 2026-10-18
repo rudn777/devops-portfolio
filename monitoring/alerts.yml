@@ -1,0 +1,20 @@
+---
+groups:
+  - name: demo-app
+    rules:
+      - alert: DemoAppDown
+        expr: up{job="demo-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "demo-app недоступен ({{ $labels.instance }})"
+      - alert: DemoAppSlow
+        expr: >
+          histogram_quantile(0.95,
+          sum(rate(demo_app_request_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 времени ответа demo-app больше 500 мс"
