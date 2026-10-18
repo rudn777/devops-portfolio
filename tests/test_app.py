@@ -20,7 +20,7 @@ def test_health():
 def test_index_has_service_name():
     r = client().get("/")
     assert r.status_code == 200
-    assert r.get_json()["service"] == "demo-app"
+    assert r.get_json()["servis"] == "demo-app"
 
 
 def test_metrics_exposed_and_counts_requests():
